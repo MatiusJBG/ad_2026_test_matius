@@ -54,11 +54,11 @@ def getproducts():
 
         for row in cursor.fetchall():
             products.append({
-                "id": row.id,
-                "names": row.names,
-                "price": float(row.price) if row.price is not None else 0.0,
-                "stock": row.stock,
-                "version": row.version
+                "id": row[0],
+                "names": row[1],
+                "price": float(row[2]) if row[2] is not None else 0.0,
+                "stock": row[3],
+                "version": row[4]
             })
 
         cursor.close()
@@ -88,11 +88,11 @@ def get_product(id):
 
         if row:
             return jsonify({
-                "id": row.id,
-                "names": row.names,
-                "price": float(row.price) if row.price is not None else 0.0,
-                "stock": row.stock,
-                "version": row.version
+                "id": row[0],
+                "names": row[1],
+                "price": float(row[2]) if row[2] is not None else 0.0,
+                "stock": row[3],
+                "version": row[4]
             }), 200
 
         return jsonify({
