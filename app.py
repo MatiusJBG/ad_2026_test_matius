@@ -4,6 +4,7 @@ from flask import Flask, jsonify, request
 import os
 import threading
 import time
+import requests
 
 app = Flask(__name__)
 
@@ -17,6 +18,58 @@ def getConection():
         cafile = certifi.where(),
         validate_host = True
     )
+
+def enviar_correo_brevo(destinatario, asunto, contenido_html):
+    api_key = os.environ.get("BREVO_API_KEY")
+    sender_email = os.environ.get("BREVO_SENDER_EMAIL")
+
+    if not api_key or not sender_email:
+        print("[BREVO ERROR]: Faltan las variables BREVO_API_KEY o BREVO_SENDER_EMAIL.")
+        return False
+
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "api-key": api_key
+    }
+    payload = {
+        "sender": {
+            "name": "Servidor Cloud",
+            "email": sender_email
+        },
+        "to": [{"email": destinatario}],
+        "subject": asunto,
+        "htmlContent": contenido_html
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=8)
+        return response.status_code in [200, 201, 202]
+    except Exception as e:
+        print(f"[BREVO ERROR]: {e}")
+        return False
+
+@app.route('/api/enviar-correo', methods=['POST'])
+def enviar_correo_manual():
+    data = request.get_json() or {}
+    destinatario = data.get("email", os.environ.get("BREVO_SENDER_EMAIL"))
+    asunto = data.get("asunto", "Notificación del Sistema")
+    mensaje = data.get("mensaje", "<p>Correo generado tras presionar el botón <b>Enviar Correo</b>.</p>")
+
+    if not destinatario:
+        return jsonify({"error": "No se especificó un correo de destino"}), 400
+
+    enviado = enviar_correo_brevo(
+        destinatario=destinatario,
+        asunto=asunto,
+        contenido_html=mensaje
+    )
+
+    if enviado:
+        return jsonify({"mensaje": f"Correo enviado exitosamente a {destinatario}"}), 200
+    
+    return jsonify({"error": "No se pudo despachar el correo a través de Brevo"}), 500
 
 @app.route('/test-db', methods=['GET'])
 def test_db():
