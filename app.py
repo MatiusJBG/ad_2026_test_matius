@@ -50,6 +50,13 @@ def enviar_correo_brevo(destinatario, asunto, contenido_html):
         print(f"[BREVO ERROR]: {e}")
         return False
 
+@app.after_request
+def habilitar_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,OPTIONS"
+    return response
+
 @app.route('/api/enviar-correo', methods=['POST'])
 def enviar_correo_manual():
     data = request.get_json() or {}
