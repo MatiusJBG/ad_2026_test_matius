@@ -59,24 +59,89 @@ def habilitar_cors(response):
 
 @app.route('/api/enviar-correo', methods=['POST'])
 def enviar_correo_manual():
-    data = request.get_json() or {}
-    destinatario = data.get("email", os.environ.get("BREVO_SENDER_EMAIL"))
-    asunto = data.get("asunto", "Notificación del Sistema")
-    mensaje = data.get("mensaje", "<p>Correo generado tras presionar el botón <b>Enviar Correo</b>.</p>")
+    try:
+        data = request.get_json() or {}
+        destinatario = data.get("email", os.environ.get("BREVO_SENDER_EMAIL"))
 
-    if not destinatario:
-        return jsonify({"error": "No se especificó un correo de destino"}), 400
+        if not destinatario:
+            return jsonify({"error": "No se especificó un correo de destino"}), 400
 
-    enviado = enviar_correo_brevo(
-        destinatario=destinatario,
-        asunto=asunto,
-        contenido_html=mensaje
-    )
+        # 1. Obtener la lista de productos actualizada desde Azure SQL
+        conn = getConection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT names, price, stock FROM dbo.products_vw")
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
 
-    if enviado:
-        return jsonify({"mensaje": f"Correo enviado exitosamente a {destinatario}"}), 200
-    
-    return jsonify({"error": "No se pudo despachar el correo a través de Brevo"}), 500
+        total_productos = len(rows)
+
+        # 2. Construir las filas de la tabla HTML
+        filas_html = ""
+        for row in rows:
+            nombre = row[0]
+            precio = float(row[1]) if row[1] is not None else 0.0
+            stock = row[2]
+            filas_html += f"""
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd;">{nombre}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${precio:.2f}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{stock} uds</td>
+            </tr>
+            """
+
+        # 3. Estructurar el cuerpo del correo
+        contenido_html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; color: #333;">
+            <h2 style="color: #0070f3; border-bottom: 2px solid #0070f3; padding-bottom: 8px;">
+                Reporte de Catálogo de Productos
+            </h2>
+            <p>Se ha generado la solicitud de información de inventario desde el portal web.</p>
+            
+            <div style="background-color: #f4f6f8; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
+                <p style="margin: 0; font-size: 16px;">
+                    <strong>Total de productos registrados:</strong> {total_productos}
+                </p>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                <thead>
+                    <tr style="background-color: #eaecef;">
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Producto</th>
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Precio</th>
+                        <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Stock</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {filas_html}
+                </tbody>
+            </table>
+            
+            <p style="font-size: 12px; color: #777; margin-top: 25px;">
+                Reporte despachado automáticamente mediante Brevo API.
+            </p>
+        </div>
+        """
+
+        # 4. Enviar mediante Brevo
+        enviado = enviar_correo_brevo(
+            destinatario=destinatario,
+            asunto=f"Catálogo Actualizado - {total_productos} Productos Disponibles",
+            contenido_html=contenido_html
+        )
+
+        if enviado:
+            return jsonify({
+                "mensaje": f"Correo con {total_productos} productos enviado exitosamente a {destinatario}"
+            }), 200
+
+        return jsonify({"error": "No se pudo despachar el correo a través de Brevo"}), 500
+
+    except Exception as e:
+        return jsonify({
+            "mensaje": "Error al generar el correo con los productos",
+            "error": str(e)
+        }), 500
 
 @app.route('/test-db', methods=['GET'])
 def test_db():
