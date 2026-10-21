@@ -60,13 +60,13 @@ def habilitar_cors(response):
 @app.route('/api/enviar-correo', methods=['POST'])
 def enviar_correo_manual():
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         destinatario = data.get("email", os.environ.get("BREVO_SENDER_EMAIL"))
 
         if not destinatario:
-            return jsonify({"error": "No se especificó un correo de destino"}), 400
+            return jsonify({"error": "No hay destinatario configurado"}), 400
 
-        # 1. Obtener la lista de productos actualizada desde Azure SQL
+        # 1. Obtener los productos desde Azure SQL
         conn = getConection()
         cursor = conn.cursor()
         cursor.execute("SELECT names, price, stock FROM dbo.products_vw")
@@ -74,74 +74,54 @@ def enviar_correo_manual():
         cursor.close()
         conn.close()
 
-        total_productos = len(rows)
+        total = len(rows)
 
-        # 2. Construir las filas de la tabla HTML
-        filas_html = ""
+        # 2. Generar las filas de la tabla
+        filas = ""
         for row in rows:
             nombre = row[0]
             precio = float(row[1]) if row[1] is not None else 0.0
             stock = row[2]
-            filas_html += f"""
+            filas += f"""
             <tr>
-                <td style="padding: 10px; border: 1px solid #ddd;">{nombre}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${precio:.2f}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{stock} uds</td>
+                <td style="padding: 8px 12px; border: 1px solid #e2e8f0;">{nombre}</td>
+                <td style="padding: 8px 12px; border: 1px solid #e2e8f0; text-align: center;">{stock} uds</td>
+                <td style="padding: 8px 12px; border: 1px solid #e2e8f0; text-align: right;">${precio:.2f}</td>
             </tr>
             """
 
-        # 3. Estructurar el cuerpo del correo
-        contenido_html = f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; color: #333;">
-            <h2 style="color: #0070f3; border-bottom: 2px solid #0070f3; padding-bottom: 8px;">
-                Reporte de Catálogo de Productos
-            </h2>
-            <p>Se ha generado la solicitud de información de inventario desde el portal web.</p>
-            
-            <div style="background-color: #f4f6f8; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
-                <p style="margin: 0; font-size: 16px;">
-                    <strong>Total de productos registrados:</strong> {total_productos}
-                </p>
-            </div>
-
-            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+        # 3. Formato del correo
+        cuerpo_html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <h2 style="color: #1e293b; margin-top: 0;">Catálogo de Productos</h2>
+            <p style="font-size: 16px; color: #334155; margin-bottom: 20px;">
+                <strong>Total de productos existentes:</strong> {total}
+            </p>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                 <thead>
-                    <tr style="background-color: #eaecef;">
-                        <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Producto</th>
-                        <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Precio</th>
-                        <th style="padding: 10px; border: 1px solid #ddd; text-align: center;">Stock</th>
+                    <tr style="background-color: #f8fafc; color: #475569;">
+                        <th style="padding: 8px 12px; border: 1px solid #e2e8f0; text-align: left;">Producto</th>
+                        <th style="padding: 8px 12px; border: 1px solid #e2e8f0; text-align: center;">Stock</th>
+                        <th style="padding: 8px 12px; border: 1px solid #e2e8f0; text-align: right;">Precio</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {filas_html}
+                    {filas}
                 </tbody>
             </table>
-            
-            <p style="font-size: 12px; color: #777; margin-top: 25px;">
-                Reporte despachado automáticamente mediante Brevo API.
-            </p>
         </div>
         """
 
-        # 4. Enviar mediante Brevo
-        enviado = enviar_correo_brevo(
-            destinatario=destinatario,
-            asunto=f"Catálogo Actualizado - {total_productos} Productos Disponibles",
-            contenido_html=contenido_html
-        )
+        asunto = f"Catálogo Actualizado: {total} productos en inventario"
+        enviado = enviar_correo_brevo(destinatario, asunto, cuerpo_html)
 
         if enviado:
-            return jsonify({
-                "mensaje": f"Correo con {total_productos} productos enviado exitosamente a {destinatario}"
-            }), 200
+            return jsonify({"mensaje": "Correo enviado"}), 200
 
-        return jsonify({"error": "No se pudo despachar el correo a través de Brevo"}), 500
+        return jsonify({"error": "Brevo no pudo despachar el mensaje"}), 500
 
     except Exception as e:
-        return jsonify({
-            "mensaje": "Error al generar el correo con los productos",
-            "error": str(e)
-        }), 500
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 @app.route('/test-db', methods=['GET'])
 def test_db():
